@@ -10,30 +10,61 @@
 
 ---
 
-## 一、前置依赖（必须先装好）
+## 一、前置依赖
 
-本插件不直接调飞书 API，而是通过本地的 `lark-cli` 工具。每台要用的电脑都需要：
+本插件不直接调飞书 API，而是通过本地的 `lark-cli`。每台电脑都需要装 lark-cli 并用**自己的飞书账号**授权，且授权必须包含以下权限（**缺一不可**，否则图文/画板/智能纪要拉取不完整）：
 
-1. 安装 `lark-cli`（飞书官方 CLI）。
-2. 运行 `lark-cli auth login`，用**自己的飞书账号**完成授权。
-3. 授权需包含妙记、视频会议纪要、云文档、媒体下载相关权限。
+```
+minutes:minutes:readonly
+minutes:minutes.search:read
+minutes:minutes.transcript:export
+minutes:minutes.artifacts:read
+vc:note:read
+docx:document:readonly
+docs:document.media:download
+```
 
-> 没装 lark-cli 或没授权，插件会提示不可用。插件设置里有「检查 cli 状态」按钮可自检。
-
-环境要求：Node 22；桌面版 Obsidian（`isDesktopOnly`，不支持移动端）。
+环境要求：Node 22；桌面版 Obsidian（`isDesktopOnly`，不支持移动端）。插件设置里有「检查 cli 状态」按钮可自检权限是否齐全。
 
 ---
 
-## 二、安装（用 BRAT 自动更新，推荐）
+## 二、最省事的安装方式：把这段提示词发给你的 AI
 
-1. 在 Obsidian 社区插件里安装并启用 **BRAT**（Obsidian42 - BRAT）。
-2. 命令面板（Cmd/Ctrl+P）→ 运行 **「BRAT: Add a beta plugin for testing」**。
-3. 输入本仓库地址：`<你的GitHub用户名>/feishu-minutes-sync`
-4. BRAT 会自动下载最新版并安装；到「设置 → 第三方插件」里启用「飞书妙记同步」。
-5. 之后维护者每发一个新版本，BRAT 会**自动检查并更新**（BRAT 默认启动时检查，也可手动「Check for updates」）。
+复制整段发给你的 AI（Claude Code / OpenClaw 等带 lark-cli 的环境），它会帮你装 lark-cli、发起飞书授权（给你授权链接）、并指导你装插件：
 
-手动安装（不用 BRAT）：把 `main.js`、`manifest.json`、`styles.css` 放到
-`<vault>/.obsidian/plugins/feishu-minutes-sync/`，重启 Obsidian 后启用。
+```
+帮我安装配置"飞书妙记同步"Obsidian 插件，一步到位：
+
+1) 装 lark-cli（已装就跳过）：npm i -g @larksuite/cli
+
+2) 飞书授权（务必带上图文/画板权限，否则智能纪要拉不全）。运行：
+   lark-cli auth login --no-wait --json --scope "minutes:minutes:readonly minutes:minutes.search:read minutes:minutes.transcript:export minutes:minutes.artifacts:read vc:note:read docx:document:readonly docs:document.media:download"
+   把返回 JSON 里的授权链接(verification_uri)和用户码(user_code)发给我，我用自己的飞书账号在浏览器打开链接、输入码授权。
+   我回复"好了"之后，你用返回的 device_code 完成登录：
+   lark-cli auth login --device-code <上一步返回的 device_code>
+   最后跑 lark-cli auth status，确认这 7 个权限都在（尤其 docx:document:readonly 和 docs:document.media:download）。
+
+3) 然后告诉我在 Obsidian 里怎么装插件：
+   - 社区插件里安装并启用 BRAT
+   - 命令面板 →「BRAT: Add a beta plugin」→ 填 joybeachlodge-bryan/feishu-minutes-sync → 勾 Enable after installing → Add plugin
+   - 在"飞书妙记同步"插件设置里点"检查 cli 状态"，确认权限齐全
+```
+
+---
+
+## 三、手动安装（不借助 AI）
+
+1. 装 lark-cli：`npm i -g @larksuite/cli`
+2. 授权（带全权限）：
+   ```bash
+   lark-cli auth login --scope "minutes:minutes:readonly minutes:minutes.search:read minutes:minutes.transcript:export minutes:minutes.artifacts:read vc:note:read docx:document:readonly docs:document.media:download"
+   ```
+   按提示在浏览器用自己的飞书账号授权，完成后 `lark-cli auth status` 自检。
+3. Obsidian 社区插件装并启用 **BRAT** → 命令面板「BRAT: Add a beta plugin」→ 填 `joybeachlodge-bryan/feishu-minutes-sync` → 勾 Enable → Add plugin。
+4. 插件设置点「检查 cli 状态」确认就绪。
+
+> 之后维护者每发一个新版本，BRAT 会**自动检查并更新**。
+> 纯手动（不用 BRAT）：把 `main.js`、`manifest.json`、`styles.css` 放到 `<vault>/.obsidian/plugins/feishu-minutes-sync/` 后重启 Obsidian。
 
 ---
 
