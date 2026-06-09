@@ -1,7 +1,7 @@
 {
   "id": "feishu-minutes-sync",
   "name": "飞书妙记同步",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "minAppVersion": "1.4.0",
   "description": "定时轮询飞书妙记，自动把新妙记的智能纪要图文、画板、待办、决策、金句和逐字稿同步成 Obsidian 笔记。",
   "author": "gongzeyi",

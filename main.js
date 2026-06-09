@@ -4,7 +4,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const PLUGIN_VERSION = "0.4.0";
+const PLUGIN_VERSION = "0.5.0";
 const CLI_CANDIDATES = [
   "/opt/homebrew/opt/node@22/bin/lark-cli",
   "/opt/homebrew/bin/lark-cli",
@@ -63,6 +63,11 @@ class FeishuMinutesSyncPlugin extends Plugin {
       id: "feishu-minutes-enrich-current",
       name: "补全当前妙记图文/待办/决策/金句",
       callback: () => this.enrichCurrentFile(),
+    });
+    this.addCommand({
+      id: "feishu-minutes-enrich-all",
+      name: "补全所有妙记笔记缺失模块（批量）",
+      callback: () => this.enrichAllFiles(),
     });
     this.addCommand({
       id: "feishu-minutes-check-cli",
@@ -520,6 +525,74 @@ class FeishuMinutesSyncPlugin extends Plugin {
       this.log("补全当前妙记失败", err);
       new Notice(`补全失败：${err.message || err}`);
     }
+  }
+
+  // 批量补全：遍历妙记文件夹，把所有已迁移笔记补齐缺失的图文/画板/各模块。
+  // 跳过：已是当前版本的、练习录音、无智能纪要(notReady)。每条带备份、错误隔离、进度提示。
+  async enrichAllFiles() {
+    const folder = normalizePath(this.settings.syncFolder);
+    const abstract = this.app.vault.getAbstractFileByPath(folder);
+    if (!abstract || !abstract.children) {
+      new Notice(`找不到妙记文件夹：${folder}`);
+      return;
+    }
+    const tasks = [];
+    const seen = new Set();
+    for (const child of abstract.children) {
+      if (!(child instanceof TFile) || child.extension !== "md") continue;
+      if (/^README|^_插件|^_/.test(child.basename)) continue;
+      if (/soundcore|新录音/i.test(child.basename)) continue; // 跳过练习录音
+      const cache = this.app.metadataCache.getFileCache(child);
+      const fm = (cache && cache.frontmatter) || {};
+      let token = fm.minute_token;
+      if (!token) {
+        const text = await this.app.vault.cachedRead(child);
+        const m = text.match(/minute_token:\s*(\S+)/);
+        token = m && m[1];
+      }
+      if (!token || token === "飞书妙记唯一" || seen.has(token)) continue;
+      // 已是当前版本则跳过（不缺模块）
+      if (fm.sync_version === PLUGIN_VERSION) continue;
+      seen.add(token);
+      tasks.push({ file: child, token });
+    }
+    if (!tasks.length) {
+      new Notice("没有需要补全的妙记笔记（其余均已是最新版本）");
+      return;
+    }
+    new Notice(`开始补全 ${tasks.length} 条妙记笔记（含图文/画板/各模块），请稍候…`);
+    let ok = 0, skip = 0, fail = 0;
+    for (let i = 0; i < tasks.length; i++) {
+      const { file, token } = tasks[i];
+      try {
+        const notes = await this.fetchNotes(token);
+        if (notes.notReady || !notes.smartDocMarkdown) { skip += 1; continue; }
+        const original = await this.app.vault.read(file);
+        if (this.settings.backupBeforeEnrich) {
+          const backupPath = await this.uniquePath(`${file.path}.bak-${this.timestamp()}`);
+          await this.app.vault.create(backupPath, original);
+        }
+        const cache = this.app.metadataCache.getFileCache(file);
+        const fm = (cache && cache.frontmatter) || {};
+        const minute = {
+          token,
+          title: fm.title || notes.title || file.basename.replace(/^\d{4}-\d{2}-\d{2}\s+/, ""),
+          url: fm.source || `https://beike.feishu.cn/minutes/${token}`,
+          startMs: fm.date ? new Date(`${fm.date}T00:00:00`).getTime() : Date.now(),
+        };
+        await this.app.vault.modify(file, this.buildMinuteMarkdown(minute, notes));
+        this.settings.syncedTokens[token] = new Date().toISOString();
+        ok += 1;
+        if ((i + 1) % 5 === 0 || i === tasks.length - 1) {
+          new Notice(`补全进度 ${i + 1}/${tasks.length}…`);
+        }
+      } catch (err) {
+        this.log("批量补全失败", token, err);
+        fail += 1;
+      }
+    }
+    await this.saveSettings();
+    new Notice(`批量补全完成：成功 ${ok}，跳过 ${skip}（无智能纪要/未生成），失败 ${fail}`);
   }
 
   async writeMinuteNote(minute, notes) {
@@ -1123,8 +1196,12 @@ class FeishuMinutesSettingTab extends PluginSettingTab {
       .addButton((button) => button.setButtonText("同步一次").setCta().onClick(() => this.plugin.runSync(true)));
     new Setting(containerEl)
       .setName("补全当前打开的妙记")
-      .setDesc("适合旧笔记：补上图文、画板、待办、决策和金句")
+      .setDesc("只处理当前打开的这一条：补上图文、画板、待办、决策和金句")
       .addButton((button) => button.setButtonText("补全当前笔记").setCta().onClick(() => this.plugin.enrichCurrentFile()));
+    new Setting(containerEl)
+      .setName("补全所有妙记笔记（批量）")
+      .setDesc("遍历妙记文件夹，把所有非最新版的旧笔记补齐缺失的图文/画板/各模块；跳过练习录音和无智能纪要的；每条自动备份")
+      .addButton((button) => button.setButtonText("补全全部").setWarning().onClick(() => this.plugin.enrichAllFiles()));
     new Setting(containerEl)
       .setName("清空同步记录")
       .setDesc(`已记录 ${Object.keys(this.plugin.settings.syncedTokens).length} 条`)
