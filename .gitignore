@@ -1,0 +1,6 @@
+main.js.bak-*
+manifest.json.bak-*
+*.bak
+.DS_Store
+node_modules/
+data.json
